@@ -1,0 +1,4 @@
+[workspace]
+resolver = "2"
+
+members = ["bsb-parser", "bsb-codec", "example"]
