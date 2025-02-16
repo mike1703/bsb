@@ -1,0 +1,32 @@
+[package]
+edition = "2021"
+name = "bsb"
+version = "0.1.0"
+authors = ["Michael Kerscher <rust@kerscher-michael.de>"]
+description = "parser and codec for BSB protocol"
+readme = "README.md"
+keywords = ["bsb", "codec", "decode", "parser", "protocol"]
+categories = ["parser-implementations", "embedded", "encoding"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mike1703/bsb"
+
+[dependencies]
+chrono = { version = "0.4.40", features = ["serde"] }
+cookie-factory = { version = "0.3.3", features = [
+    "std",
+], default-features = false }
+crc16 = "0.4.0"
+nom = "8.0.0"
+nom-language = "0.1.0"
+phf = "0.11.3"
+serde = { version = "1.0.218", features = ["derive"] }
+strum = { version = "0.27.1", features = ["derive"] }
+thiserror = "2.0.12"
+
+[build-dependencies]
+csv = "1.3.1"
+phf_codegen = "0.11.3"
+serde = { version = "1.0.218", features = ["serde_derive"] }
+
+[workspace]
+members = ["example"]
