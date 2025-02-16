@@ -1,0 +1,23 @@
+[package]
+edition = "2021"
+name = "bsb-parser"
+version = "0.1.0"
+authors = ["Michael Kerscher <rust@kerscher-michael.de>"]
+description = "A parser for BSB protocol frames"
+readme = "README.md"
+keywords = ["bsb", "parser", "protocol", "frame"]
+categories = ["parser-implementations", "embedded"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mike1703/bsb-parser"
+
+[dependencies]
+cookie-factory = { version = "0.3.3", features = ["std"], default-features = false }
+crc16 = "0.4.0"
+nom = "8.0.0"
+nom-language = "0.1.0"
+strum = { version = "0.27.0", features = ["strum_macros"] }
+strum_macros = "0.27.0"
+
+[lints.clippy]
+cargo = "warn"
+pedantic = "warn"
