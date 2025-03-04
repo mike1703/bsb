@@ -1,10 +1,11 @@
-pub use parser::ParseErrorKind;
-pub use parser::ParseResult;
 use serde::Serialize;
 use strum::FromRepr;
 
-mod parser;
-mod serializer;
+use parser::{FrameParser, ParseResult};
+use serializer::FrameSerializer;
+
+pub(crate) mod parser;
+pub(crate) mod serializer;
 
 /// BSB `SOF` (start of frame) that is used to start each frame
 pub const SOF: u8 = 0xdc;
@@ -67,16 +68,16 @@ impl Frame {
         )
     }
 
+    /// Parse the `input` slice into `Ok(remaining_bytes, Frame)`, `Incomplete` or `Error`
+    #[must_use]
+    pub fn parse(input: &[u8]) -> ParseResult<'_> {
+        FrameParser::parse(input)
+    }
+
     /// Serialize the `Frame` into a `Vec<u8>`
     #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
-        serializer::frame_serializer(self)
-    }
-
-    /// Parse the `input` slice into `Ok(remaining_bytes, Frame)`, `Incomplete` or `Error`
-    #[must_use]
-    pub fn parse(input: &[u8]) -> ParseResult {
-        parser::parser(input)
+        FrameSerializer::serialize(self)
     }
 
     /// `destination_address` of this `Frame`
@@ -127,7 +128,7 @@ pub enum PacketType {
 
 #[cfg(test)]
 mod tests {
-    use crate::{parser::ParseResult, Frame};
+    use super::{parser::ParseResult, Frame};
 
     /// create a test frame for all tests
     fn create_frame() -> Frame {
@@ -136,18 +137,17 @@ mod tests {
 
     /// create a serialized version of a frame for all tests
     fn create_serialized() -> &'static [u8] {
-        &[220, 130, 1, 12, 3, 0, 0, 0, 4, 5, 219, 42]
+        &[220, 2 ^ 0x80, 1, 12, 3, 0, 0, 0, 4, 5, 219, 42]
     }
 
     #[test]
     fn test_parse() {
         let testcase = create_serialized();
-        if let ParseResult::Ok { rest, frame } = Frame::parse(&testcase) {
-            assert!(rest.is_empty());
-            assert_eq!(frame, create_frame());
-        } else {
-            assert!(false)
+        let ParseResult::Ok { rest, frame } = Frame::parse(&testcase) else {
+            panic!("not a frame")
         };
+        assert!(rest.is_empty());
+        assert_eq!(frame, create_frame());
     }
 
     #[test]
@@ -155,25 +155,6 @@ mod tests {
         let testcase = create_frame();
         let want = create_serialized();
         assert_eq!(testcase.serialize(), want);
-    }
-
-    #[test]
-    fn test_parse_two_correct_frames() {
-        let testcase = vec![create_serialized().to_vec(), create_serialized().to_vec()]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        let want = create_frame();
-        let ParseResult::Ok { rest, frame } = Frame::parse(&testcase) else {
-            panic!("not a frame");
-        };
-        assert!(!rest.is_empty());
-        assert_eq!(frame, want);
-        let ParseResult::Ok { rest, frame } = Frame::parse(rest) else {
-            panic!("not a frame");
-        };
-        assert!(rest.is_empty());
-        assert_eq!(frame, want);
     }
 
     #[test]

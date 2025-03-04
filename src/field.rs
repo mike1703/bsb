@@ -1,10 +1,17 @@
 use std::fmt::Display;
 
 use serde::Serialize;
+use thiserror::Error;
 
-use crate::{datatypes::Datatype, error::CodecError};
+use crate::{error::BsbError, Datatype};
 // include the bsb field definitions in a static map in `FIELDS`
 include!(concat!(env!("OUT_DIR"), "/field_db.rs"));
+
+#[derive(Debug, Error, PartialEq)]
+pub enum FieldError {
+    #[error("unknown field")]
+    UnknownField,
+}
 
 /// the `name` and `datatype` of this `Field`
 #[derive(Debug, PartialEq, Serialize)]
@@ -18,8 +25,8 @@ pub struct Field {
 
 impl Field {
     /// try to get a `Field` definition from an field `id`
-    pub fn by_id(id: u32) -> Result<&'static Field, CodecError> {
-        FIELDS.get(&id).ok_or(CodecError::UnknownField)
+    pub fn by_id(id: u32) -> Result<&'static Field, BsbError> {
+        FIELDS.get(&id).ok_or(FieldError::UnknownField.into())
     }
 
     /// try to get a `Field` definition from a field `name`
@@ -66,7 +73,7 @@ impl Display for Field {
 
 #[cfg(test)]
 mod tests {
-    use crate::datatypes::Datatype;
+    use crate::Datatype;
 
     use super::Field;
 
@@ -79,23 +86,64 @@ mod tests {
     };
 
     #[test]
-    fn test_field_db() {
+    fn test_field_db_by_id() {
         let testcase = Field::by_id(TESTFIELD.id).unwrap();
         let want = TESTFIELD;
         assert_eq!(testcase, &want)
     }
 
     #[test]
-    fn test_field_by_name() {
+    fn test_field_db_by_name() {
         let testcase = Field::by_name(&TESTFIELD.name).unwrap();
         let want = TESTFIELD;
         assert_eq!(testcase, &want)
     }
 
     #[test]
-    fn test_to_string() {
+    fn test_field_to_string() {
         let testcase = TESTFIELD.to_string();
         let want = TESTFIELD.name;
         assert_eq!(&testcase, want);
+    }
+
+    #[test]
+    fn test_field_id() {
+        let testcase = TESTFIELD.id();
+        let want = 0x313d052f;
+        assert_eq!(testcase, want);
+    }
+
+    #[test]
+    fn test_field_datatype() {
+        let testcase = TESTFIELD.datatype();
+        let want = Datatype::Float(64);
+        assert_eq!(testcase, want);
+    }
+
+    #[test]
+    fn test_field_prognr() {
+        let testcase = TESTFIELD.prognr();
+        let want = 8701;
+        assert_eq!(testcase, want);
+    }
+
+    #[test]
+    fn test_field_name() {
+        let testcase = TESTFIELD.name();
+        let want = "warmwater_temperature";
+        assert_eq!(testcase, want);
+    }
+
+    #[test]
+    fn test_field_path() {
+        let testcase = TESTFIELD.path();
+        let want = "temperature/warmwater";
+        assert_eq!(testcase, want);
+    }
+
+    #[test]
+    fn test_field_iter() {
+        let testcase = Field::iter().next();
+        assert!(testcase.is_some())
     }
 }

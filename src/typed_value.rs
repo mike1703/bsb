@@ -2,8 +2,23 @@ use std::fmt::Display;
 
 use chrono::{Datelike as _, NaiveDate, NaiveDateTime, NaiveTime, Timelike as _};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-use crate::{datatypes::Datatype, error::CodecError, value::Value};
+use crate::{error::BsbError, Datatype, Value};
+
+#[derive(Debug, Error, PartialEq)]
+pub enum TypedValueError {
+    #[error("invalid date time")]
+    InvalidDateTime,
+    #[error("invalid payload length")]
+    InvalidPayloadLength,
+    #[error("invalid schedule")]
+    InvalidSchedule,
+    #[error("invalid setting")]
+    InvalidSetting,
+    #[error("invalid value datatype")]
+    InvalidDatatype,
+}
 
 /// a `Value` with its `Datatype`
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -20,19 +35,19 @@ impl TypedValue {
         datatype: Datatype,
         flag: Option<u8>,
         value: Value,
-    ) -> Result<TypedValue, CodecError> {
+    ) -> Result<TypedValue, TypedValueError> {
         // check if the value is valid for the datatype
         match (&value, &datatype) {
             (Value::Setting(v), Datatype::Setting(max)) => {
                 if v > max {
-                    return Err(CodecError::InvalidSetting);
+                    return Err(TypedValueError::InvalidSetting);
                 }
             }
             (Value::Float(_), Datatype::Float(_)) => {}
             (Value::Number(_), Datatype::Number) => {}
             (Value::DateTime(_), Datatype::DateTime) => {}
             (Value::Schedule(_), Datatype::Schedule) => {}
-            _ => return Err(CodecError::InvalidDatatype),
+            _ => return Err(TypedValueError::InvalidDatatype),
         }
 
         Ok(TypedValue {
@@ -58,7 +73,7 @@ impl TypedValue {
     }
 
     /// Create a TypedValue from string
-    pub fn from_str(s: &str, datatype: Datatype) -> Result<TypedValue, CodecError> {
+    pub fn from_str(s: &str, datatype: Datatype) -> Result<TypedValue, BsbError> {
         let value = Value::from_str(s, datatype)?;
         Ok(TypedValue {
             datatype,
@@ -69,21 +84,23 @@ impl TypedValue {
 
     /// Decode the BSB protocol `payload` with the specified `datatype` into a `TypedValue`.
     /// Returns None if invalid settings are encountered
-    pub fn decode(payload: &[u8], datatype: Datatype) -> Result<TypedValue, CodecError> {
+    pub fn decode(payload: &[u8], datatype: Datatype) -> Result<TypedValue, TypedValueError> {
         // there is a flag for most datatypes in the first byte, but not for schedule
         let (value, flag) = match datatype {
             Datatype::Setting(max) => {
                 // use the second byte in the payload as the integer value for the enum
-                let enum_encoded_value = *payload.get(1).ok_or(CodecError::InvalidPayloadLength)?;
+                let enum_encoded_value = *payload
+                    .get(1)
+                    .ok_or(TypedValueError::InvalidPayloadLength)?;
                 if enum_encoded_value > max {
                     // this seems to be an invalid setting, don't decode this
-                    return Err(CodecError::InvalidSetting);
+                    return Err(TypedValueError::InvalidSetting);
                 }
                 (Value::Setting(enum_encoded_value), payload.get(0))
             }
             Datatype::Number => {
                 if payload.len() < 3 {
-                    return Err(CodecError::InvalidPayloadLength);
+                    return Err(TypedValueError::InvalidPayloadLength);
                 };
                 (
                     // unclear if this is unsigned
@@ -93,7 +110,7 @@ impl TypedValue {
             }
             Datatype::Float(division_factor) => {
                 if payload.len() < 3 {
-                    return Err(CodecError::InvalidPayloadLength);
+                    return Err(TypedValueError::InvalidPayloadLength);
                 }
                 (
                     // signed 16bit integer with a division factor
@@ -106,7 +123,7 @@ impl TypedValue {
             }
             Datatype::DateTime => {
                 if payload.len() < 9 {
-                    return Err(CodecError::InvalidPayloadLength);
+                    return Err(TypedValueError::InvalidPayloadLength);
                 }
                 // convert the payload bytes to the right datatypes
                 let year = 1900 + payload[1] as i32;
@@ -121,9 +138,9 @@ impl TypedValue {
                 (
                     Value::DateTime(NaiveDateTime::new(
                         NaiveDate::from_ymd_opt(year, month, day)
-                            .ok_or(CodecError::InvalidDateTime)?,
+                            .ok_or(TypedValueError::InvalidDateTime)?,
                         NaiveTime::from_hms_opt(hour, minute, second)
-                            .ok_or(CodecError::InvalidDateTime)?,
+                            .ok_or(TypedValueError::InvalidDateTime)?,
                     )),
                     payload.get(0),
                 )
@@ -138,13 +155,13 @@ impl TypedValue {
                     }
                     // validate correct hour and minute values
                     if sh > 24 || eh > 24 || sm > 59 || em > 59 {
-                        return Err(CodecError::InvalidSchedule);
+                        return Err(TypedValueError::InvalidSchedule);
                     }
                     ranges.push((sh, sm, eh, em));
                 }
                 // if there is remaining data, the schedule was not provided in chunks of 4 bytes
                 if !range.remainder().is_empty() {
-                    return Err(CodecError::InvalidSchedule);
+                    return Err(TypedValueError::InvalidSchedule);
                 }
                 (Value::Schedule(ranges), None)
             }
@@ -175,7 +192,7 @@ impl TypedValue {
                 let Datatype::Float(factor) = self.datatype else {
                     unimplemented!()
                 };
-                let scaled_number = (n * factor as f32) as u16;
+                let scaled_number = (n * f32::from(factor)) as u16;
                 let bytes = scaled_number.to_be_bytes();
                 vec![
                     self.flag.expect("Float needs to have a flag"),
@@ -227,12 +244,14 @@ impl Display for TypedValue {
 
 #[cfg(test)]
 mod tests {
-    use crate::{testcases, CodecError, Datatype, TypedValue};
+    use crate::{testcases, Datatype, TypedValue};
+
+    use super::TypedValueError;
 
     #[test]
     fn test_typed_value_decode() {
         for (datatype, bytes, flag, value, _display_str) in
-            testcases::success_testcases().into_iter()
+            testcases::datatype_value_success_testcases().into_iter()
         {
             let testcase = TypedValue::decode(&bytes, datatype).unwrap();
             let want = TypedValue::new(datatype, flag, value).unwrap();
@@ -243,7 +262,7 @@ mod tests {
     #[test]
     fn test_typed_value_encode() {
         for (datatype, bytes, flag, value, _display_str) in
-            testcases::success_testcases().into_iter()
+            testcases::datatype_value_success_testcases().into_iter()
         {
             let testcase = TypedValue::new(datatype, flag, value).unwrap().encode();
             let want = bytes;
@@ -254,7 +273,7 @@ mod tests {
     #[test]
     fn test_typed_value_decode_encode_identical() {
         for (datatype, bytes, _flag, _value, _display_str) in
-            testcases::success_testcases().into_iter()
+            testcases::datatype_value_success_testcases().into_iter()
         {
             let decoded = TypedValue::decode(&bytes, datatype).unwrap();
             let testcase_encoded = decoded.encode();
@@ -265,7 +284,7 @@ mod tests {
     #[test]
     fn test_typed_value_to_string() {
         for (datatype, _bytes, flag, value, display_str) in
-            testcases::success_testcases().into_iter()
+            testcases::datatype_value_success_testcases().into_iter()
         {
             let testcase = TypedValue::new(datatype, flag, value).unwrap().to_string();
             let want = display_str.to_string();
@@ -277,36 +296,40 @@ mod tests {
     fn test_typed_value_decode_errors() {
         // a set of error testcases to test the decoder (<datatype>, <encoded>, <error>)
         let error_testcases = vec![
-            (Datatype::Setting(2), vec![0, 3], CodecError::InvalidSetting),
+            (
+                Datatype::Setting(2),
+                vec![0, 3],
+                TypedValueError::InvalidSetting,
+            ),
             (
                 Datatype::Number,
                 vec![0, 0],
-                CodecError::InvalidPayloadLength,
+                TypedValueError::InvalidPayloadLength,
             ),
             (
                 Datatype::Float(10),
                 vec![0, 0],
-                CodecError::InvalidPayloadLength,
+                TypedValueError::InvalidPayloadLength,
             ),
             (
                 Datatype::DateTime,
                 vec![0, 124, 11, 11, 1, 9, 36, 57],
-                CodecError::InvalidPayloadLength,
+                TypedValueError::InvalidPayloadLength,
             ),
             (
                 Datatype::DateTime,
                 vec![0, 124, 11, 11, 1, 25, 36, 57, 0],
-                CodecError::InvalidDateTime,
+                TypedValueError::InvalidDateTime,
             ),
             (
                 Datatype::Schedule,
                 vec![6, 50, 7, 10, 18, 30, 18],
-                CodecError::InvalidSchedule,
+                TypedValueError::InvalidSchedule,
             ),
             (
                 Datatype::Schedule,
                 vec![6, 50, 7, 10, 18, 30, 18, 60, 24 ^ 0x80, 0, 24, 0],
-                CodecError::InvalidSchedule,
+                TypedValueError::InvalidSchedule,
             ),
         ];
         for (datatype, bytes, error) in error_testcases.into_iter() {
@@ -318,7 +341,7 @@ mod tests {
     #[test]
     fn test_typed_value_encode_decode_identical() {
         for (datatype, _bytes, flag, value, _display_str) in
-            testcases::success_testcases().into_iter()
+            testcases::datatype_value_success_testcases().into_iter()
         {
             let want = TypedValue::new(datatype, flag, value).unwrap();
             let encoded = want.encode();
@@ -331,6 +354,6 @@ mod tests {
     fn test_typed_value_invalid_datatype_value_combination() {
         let testcase = TypedValue::new(Datatype::Number, Some(0), crate::Value::Float(1.0))
             .expect_err("no error");
-        assert_eq!(testcase, CodecError::InvalidDatatype);
+        assert_eq!(testcase, TypedValueError::InvalidDatatype);
     }
 }

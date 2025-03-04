@@ -1,5 +1,4 @@
-use bsb_codec::{Datatype, FieldValue, TypedValue, Value};
-use bsb_parser::{Frame, PacketType, ParseResult};
+use bsb::{Datatype, FieldValue, Frame, PacketType, ParseResult, TypedValue, Value};
 
 fn main() {
     let data: &[u8; 14] = &[

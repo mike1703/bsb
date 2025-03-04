@@ -2,8 +2,23 @@ use std::fmt::Display;
 
 use chrono::{DateTime, NaiveDateTime};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-use crate::{datatypes::Datatype, error::CodecError};
+use crate::Datatype;
+
+#[derive(Debug, Error, PartialEq)]
+pub enum ValueError {
+    #[error(transparent)]
+    ParseIntError(#[from] std::num::ParseIntError),
+    #[error(transparent)]
+    ParseFloatError(#[from] std::num::ParseFloatError),
+    #[error(transparent)]
+    ParseDateTimeError(#[from] chrono::ParseError),
+    #[error("invalid setting")]
+    InvalidSetting,
+    #[error("invalid schedule")]
+    InvalidSchedule,
+}
 
 /// The Value enum is aligned with the Datatype enum
 /// This type stores the actual values
@@ -23,9 +38,9 @@ pub enum Value {
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Setting(v) => write!(f, "{}", v),
-            Value::Number(v) => write!(f, "{}", v),
-            Value::Float(v) => write!(f, "{}", v),
+            Value::Setting(v) => write!(f, "{v}"),
+            Value::Number(v) => write!(f, "{v}"),
+            Value::Float(v) => write!(f, "{v}"),
             Value::DateTime(v) => write!(f, "{}", v.format("%Y-%m-%dT%H:%M:%S")),
             Value::Schedule(v) => write!(
                 f,
@@ -41,12 +56,12 @@ impl Display for Value {
 
 impl Value {
     // reverse of Display for Value
-    pub fn from_str(s: &str, datatype: Datatype) -> Result<Value, CodecError> {
+    pub fn from_str(s: &str, datatype: Datatype) -> Result<Value, ValueError> {
         match datatype {
             Datatype::Setting(max) => {
                 let v = s.parse::<u8>()?;
                 if v > max {
-                    return Err(CodecError::InvalidSetting);
+                    return Err(ValueError::InvalidSetting);
                 }
                 Ok(Value::Setting(v))
             }
@@ -67,16 +82,16 @@ impl Value {
                 // "<range>,<range>,<range>"
                 for range in s.split(',') {
                     // "{sh}:{sm}-{eh}:{em}"
-                    let (sh, rest) = range.split_once(':').ok_or(CodecError::InvalidSchedule)?;
-                    let (sm, rest) = rest.split_once('-').ok_or(CodecError::InvalidSchedule)?;
-                    let (eh, em) = rest.split_once(':').ok_or(CodecError::InvalidSchedule)?;
+                    let (sh, rest) = range.split_once(':').ok_or(ValueError::InvalidSchedule)?;
+                    let (sm, rest) = rest.split_once('-').ok_or(ValueError::InvalidSchedule)?;
+                    let (eh, em) = rest.split_once(':').ok_or(ValueError::InvalidSchedule)?;
                     let sh = sh.parse::<u8>()?;
                     let sm = sm.parse::<u8>()?;
                     let eh = eh.parse::<u8>()?;
                     let em = em.parse::<u8>()?;
                     // validate correct hour and minute values
                     if sh > 24 || eh > 24 || sm > 59 || em > 59 {
-                        return Err(CodecError::InvalidSchedule);
+                        return Err(ValueError::InvalidSchedule);
                     }
                     ranges.push((sh, sm, eh, em));
                 }
@@ -103,12 +118,14 @@ impl Value {
 mod tests {
     use chrono::DateTime;
 
-    use crate::{testcases, CodecError, Datatype, Value};
+    use crate::{testcases, Datatype, Value};
+
+    use super::ValueError;
 
     #[test]
     fn test_value_from_string() {
         for (datatype, _bytes, _flag, value, display_str) in
-            testcases::success_testcases().into_iter()
+            testcases::datatype_value_success_testcases().into_iter()
         {
             let testcase = Value::from_str(display_str, datatype).unwrap();
             let want = value;
@@ -119,7 +136,7 @@ mod tests {
     #[test]
     fn test_value_from_to_string_identical() {
         for (datatype, _bytes, _flag, _value, display_str) in
-            testcases::success_testcases().into_iter()
+            testcases::datatype_value_success_testcases().into_iter()
         {
             let testcase = Value::from_str(display_str, datatype).unwrap().to_string();
             let want = display_str.to_string();
@@ -130,7 +147,7 @@ mod tests {
     #[test]
     fn test_value_to_from_string_identical() {
         for (datatype, _bytes, _flag, value, _display_str) in
-            testcases::success_testcases().into_iter()
+            testcases::datatype_value_success_testcases().into_iter()
         {
             let testcase = Value::from_str(&value.to_string(), datatype).unwrap();
             let want = value;
@@ -142,16 +159,16 @@ mod tests {
     fn test_value_from_string_errors() {
         // a set of error testcases for the value from string method (<datatype>, <string>, <error>)
         let from_string_error_testcases = vec![
-            (Datatype::Setting(2), "3", CodecError::InvalidSetting),
+            (Datatype::Setting(2), "3", ValueError::InvalidSetting),
             (
                 Datatype::Schedule,
                 "6:50-7:10,18:30-18:60",
-                CodecError::InvalidSchedule,
+                ValueError::InvalidSchedule,
             ),
             (
                 Datatype::Schedule,
                 "6:50-7:10,18:3018:50",
-                CodecError::InvalidSchedule,
+                ValueError::InvalidSchedule,
             ),
         ];
         for (datatype, string, error) in from_string_error_testcases.into_iter() {

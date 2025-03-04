@@ -32,7 +32,7 @@ fn main() {
         builder.entry(
             field.id,
             &format!(
-                "Field {{id: {}, name: \"{}\", prognr: {}, datatype: Datatype::{}, path: \"{}\"}}",
+                "Field {{id: 0x{:08X}, name: \"{}\", prognr: {}, datatype: Datatype::{}, path: \"{}\"}}",
                 field.id, field.name, field.prognr, field.data_type, field.path
             ),
         );

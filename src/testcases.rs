@@ -2,10 +2,11 @@ use std::str::FromStr as _;
 
 use chrono::NaiveDateTime;
 
-use crate::{datatypes::Datatype, value::Value};
+use crate::{Datatype, Value};
 
 /// a set of successfull testcases with (<datatype>, <encoded_bytes>, <flag>, <decoded_value>, <value_str>)
-pub(crate) fn success_testcases() -> Vec<(Datatype, Vec<u8>, Option<u8>, Value, &'static str)> {
+pub(crate) fn datatype_value_success_testcases(
+) -> Vec<(Datatype, Vec<u8>, Option<u8>, Value, &'static str)> {
     vec![
         (
             Datatype::Setting(2),

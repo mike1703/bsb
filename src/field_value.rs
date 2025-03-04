@@ -1,9 +1,8 @@
 use std::fmt::Display;
 
-use bsb_parser::Frame;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::CodecError, field::Field, typed_value::TypedValue};
+use crate::{error::BsbError, Field, Frame, TypedValue};
 
 /// `FieldValue` contains information about the `Field` (via `field_id`) and the `TypedValue`.
 /// Due to the construction, it is guaranteed that the field is supported by this crate.
@@ -17,7 +16,7 @@ pub struct FieldValue {
 impl FieldValue {
     /// Create a new `FieldValue` based on a `typed_value` and a `field_id` that is
     /// guaranteed to exist if it returns a Result
-    pub fn new(field_id: u32, typed_value: TypedValue) -> Result<FieldValue, CodecError> {
+    pub fn new(field_id: u32, typed_value: TypedValue) -> Result<FieldValue, BsbError> {
         let field = Field::by_id(field_id)?;
         Ok(FieldValue {
             field_id: field.id(),
@@ -26,7 +25,7 @@ impl FieldValue {
     }
 
     /// Convert a `Frame` to a `FieldValue` if that `Field` is known
-    pub fn from_frame(frame: &Frame) -> Result<FieldValue, CodecError> {
+    pub fn from_frame(frame: &Frame) -> Result<FieldValue, BsbError> {
         let field = Field::by_id(frame.field_id())?;
         let typed_value = TypedValue::decode(frame.payload(), field.datatype())?;
         Ok(FieldValue {
@@ -47,9 +46,7 @@ impl FieldValue {
 
     /// Access `field`
     pub fn field(&self) -> &'static Field {
-        let field =
-            Field::by_id(self.field_id).expect("field is expected to exist due to construction");
-        field
+        Field::by_id(self.field_id).expect("field is expected to exist due to construction")
     }
 
     /// Access `typed_value`
@@ -58,7 +55,7 @@ impl FieldValue {
     }
 
     /// Create a FieldValue from a string representation based on the datatype
-    pub fn from_str(s: &str, field_id: u32) -> Result<FieldValue, CodecError> {
+    pub fn from_str(s: &str, field_id: u32) -> Result<FieldValue, BsbError> {
         let field = Field::by_id(field_id)?;
         let typed_value = TypedValue::from_str(s, field.datatype())?;
         Ok(FieldValue {
@@ -94,10 +91,8 @@ impl Display for FieldValue {
 
 #[cfg(test)]
 mod tests {
-    use bsb_parser::Frame;
-
     use crate::{
-        datatypes::Datatype, error::CodecError, field::Field, typed_value::TypedValue, value::Value,
+        typed_value::TypedValueError, BsbError, Datatype, Field, Frame, TypedValue, Value,
     };
 
     use super::FieldValue;
@@ -182,6 +177,9 @@ mod tests {
     fn test_field_value_from_frame_invalid() {
         let frame = Frame::new(66, 0, 7, 222103850, vec![0, 3]);
         let testcase = FieldValue::from_frame(&frame).expect_err("not an error");
-        assert_eq!(testcase, CodecError::InvalidSetting);
+        assert_eq!(
+            testcase,
+            BsbError::TypedValueError(TypedValueError::InvalidSetting)
+        );
     }
 }
